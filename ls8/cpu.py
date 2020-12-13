@@ -2,65 +2,56 @@
 
 import sys
 
+# Instructions
+LDI = 0b10000010
+PRN = 0b01000111
+HLT = 0b00000001
+MUL = 0b10100010
+PUSH = 0b01000101
+POP = 0b01000110
+CALL = 0b01010000
+RET = 0b00010001
+ADD = 0b10100000
+
 class CPU:
     """Main CPU class."""
 
     def __init__(self):
         """Construct a new CPU."""
-        self.ram = [0] * 256
 
-        self.reg = {}
-        self.reg = [0] * 8
-        self.reg[7] = 0xF4
+        self.ram = [0] * 256            # Memory is 256 bytes
+        self.reg = {}                   # Create register
+        self.reg = [0] * 8              # Register has 8 slots
+        self.pc = 0                     # Program Counter, address of the currently executing instruction
+        self.running = True             # Program is initialized as running = False, and changes to False with HLT instruction
+        self.reg[7] = len(self.ram) - 1 # Register slot 7 is reserved as the stack pointer and set to last byte in memory
 
-        self.pc = 0
-
-
-        # self.registers = [0] * 8
-        # self.registers[7] = 0xF4
-        self.halted = False
 
     def ram_read(self, memory_address_register):
         """Accepts an address and returns the value stored there"""
 
         return self.ram[memory_address_register]
 
-    def ram_write(self, memory_data_register, memory_address_register):
+    def ram_write(self, memory_address_register, memory_data_register):
         """Accepts a value to write and the address to write to it"""
 
         self.ram[memory_address_register] = memory_data_register
 
 
-    def load(self):
+    def load(self, filename):
         """Load a program into memory."""
 
-        address = 0
-        program = []
-
-        print('Instructions')
-        with open(sys.argv[1], 'r') as file:
+        print('--- Instructions ---')
+        with open(filename, 'r') as file:
+            address = 0
             for line in file:
                 if line[0].isdigit():
-                    str_val = line[0:8]
+                    instruction = int(line[0:8], 2)
+                    self.ram_write(address, instruction)
+                    address += 1
                     print(line[0:8])
-                    int_val = int(line[0:8], 2)
-                    program.append(int_val)
-        print('------------')
+        print('--- Program ---')
 
-        # For now, we've just hardcoded a program:
-        # program = [
-        #     # From print8.ls8
-        #     0b10000010, # LDI R0,8
-        #     0b00000000,
-        #     0b00001000,
-        #     0b01000111, # PRN R0
-        #     0b00000000,
-        #     0b00000001, # HLT
-        # ]
-
-        for instruction in program:
-            self.ram[address] = instruction
-            address += 1
 
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
@@ -70,6 +61,7 @@ class CPU:
         #elif op == "SUB": etc
         else:
             raise Exception("Unsupported ALU operation")
+
 
     def trace(self):
         """
@@ -91,33 +83,64 @@ class CPU:
 
         print()
 
+
+    def bit_mask(self, instruction):
+        '''Performs bit masking on a given instruction and returns the number of operands'''
+
+        return ((instruction >> 6) & 0b11) + 1
+
+
     def run(self):
         """Run the CPU."""
 
-        ir = self.pc
-        running = True
+        while self.running:
+            instruction = self.ram_read(self.pc)
+            operand_a = self.ram_read(self.pc + 1)
+            operand_b = self.ram_read(self.pc + 2)
+            num_operands = self.bit_mask(instruction)
 
-        while running:
-            instruction = self.ram_read(ir)
-            operand_a = self.ram_read(ir + 1)
-            operand_b = self.ram_read(ir + 2)
-
-            if instruction == 0b10000010:  # LDI
+            if instruction == LDI:
                 self.reg[operand_a] = operand_b
-                ir += 3
+                self.pc += num_operands
 
-            elif instruction == 0b01000111:  # PRN
+            elif instruction == PRN:
                 print(self.reg[operand_a])
-                ir += 2
+                self.pc += num_operands
 
-            elif instruction == 0b00000001:  # HLT
-                running = False
-                ir += 1
+            elif instruction == HLT:
+                self.running = False
+                print('Register:', self.reg)
+                print('Memory:', self.ram)
+                self.pc += num_operands
 
-            elif instruction == 0b10100010:  # MUL
+            elif instruction == MUL:
                 product = self.reg[operand_a] * self.reg[operand_b]
                 self.reg[operand_a] = product
-                ir += 3
+                self.pc += num_operands
+
+            elif instruction == PUSH:
+                self.ram_write(self.reg[7], self.reg[operand_a])
+                self.reg[7] -= 1
+                self.pc += num_operands
+
+            elif instruction == POP:
+                self.reg[7] += 1
+                self.reg[operand_a] = self.ram_read(self.reg[7])
+                self.pc += num_operands
+
+            elif instruction == CALL:
+                self.ram_write(self.reg[7], self.pc + 2)
+                self.reg[7] -= 1
+                self.pc = self.reg[operand_a]
+
+            elif instruction == RET:
+                self.reg[7] += 1
+                self.pc = self.ram_read(self.reg[7])
+
+            elif instruction == ADD:
+                sum = self.reg[operand_a] + self.reg[operand_b]
+                self.reg[operand_a] = sum
+                self.pc += num_operands
 
             else:
                 print(f'Unknown instructions: {instruction}')
